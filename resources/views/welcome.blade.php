@@ -85,8 +85,12 @@
                     <input type="number" step="0.0000000001" name="price" id="price">
                 </label>
                 <label for="time">
-                    Time
-                    <input type="text" name="time" id="time">
+                    Time to change
+                    <input type="text" name="time_to_change" id="time_to_change">
+                </label>
+                <label for="time">
+                    Time to end
+                    <input type="text" name="time_to_end" id="time_to_end">
                 </label>
                 <label for="go">
                     <input type="submit" id="go" value="Go">
@@ -142,7 +146,8 @@
                     type: 'spline',
                     tooltip: {
                         valueDecimals: 8
-                    }
+                    },
+                    turboThreshold: 0
                 },
                 {
                     name: 'MEDIAN',
@@ -210,6 +215,7 @@
             ]
         });
         var init_data = false;
+        var init_second_part = false;
         var data_inited = false;
         var all_ticks = [];
         var all_changed_ticks = [];
@@ -223,18 +229,23 @@
             lower_3: []
         };
         var init_tick;
+        var end_init_tick;
         var prev_real_tick = null;
         var prev_fake_tick = null;
         var time_to_change = 0;
+        var time_to_end = 0;
         var price_to_change = 0;
         var price_diff;
         var abs_price_diff;
         var average_change_by_sec = 0;
+        var end_changes = false;
+        var max_possible_diff_to_end;
         $('#init_data_form').submit(function (e){
             e.preventDefault();
             if(!init_data) {
                 init_data = true;
-                time_to_change = parseInt($('#time').val()) * 60;
+                time_to_change = parseInt($('#time_to_change').val()) * 60;
+                time_to_end = parseInt($('#time_to_end').val()) * 60;
                 price_to_change = parseFloat($('#price').val());
             }
         });
@@ -253,73 +264,150 @@
                         price_diff = ((init_tick.ask + init_tick.bid) / 2) - price_to_change;
                         abs_price_diff = Math.abs(price_diff);
                         average_change_by_sec = Math.abs(price_diff) / time_to_change;
-                        var when_make_changes = [];
+                        var is_flat = false;
+                        var flat_init_point;
+                        var recovery_offset = 0;
+                        var flats_in_a_row = 0;
+                        var when_prevent_flat = time_to_change - (time_to_change * 0.25);
                         for(i = 0; i < time_to_change; i++) {
-                            var current_median_point = {x: (init_tick.lasttime + i) * 1000, y: ((init_tick.ask + init_tick.bid) / 2) + (average_change_by_sec * i)};
-                            median_spline.middle.push(current_median_point);
-                            if(when_make_changes.length === 0) {
-                                var count_of_changes = Math.round((Math.random() * (6 - 3) + 3));
-                                for(j = 0; j < count_of_changes; j++) {
-                                    var time_when_change = Math.round((Math.random() * ((init_tick.lasttime + i + 60) - (init_tick.lasttime + i + 1)) + (init_tick.lasttime + i + 1)));
-                                    while(when_make_changes.indexOf(time_when_change) !== -1) {
-                                        time_when_change = Math.round((Math.random() * ((init_tick.lasttime + i + 60) - (init_tick.lasttime + i + 1)) + (init_tick.lasttime + i + 1)));
-                                    }
-                                    when_make_changes.push(time_when_change);
-                                }
-                                when_make_changes = when_make_changes.sort();
+                            if(i >= when_prevent_flat) {
+                                is_flat = false;
                             } else {
-                                if(when_make_changes[0] === (init_tick.lasttime + i)) {
-                                    when_make_changes.shift();
-                                    var last_tick = all_changed_ticks[all_changed_ticks.length - 1];
-                                    var current_price_diff = current_median_point.y - last_tick.y;
-                                    var new_tick = {x: (init_tick.lasttime + i) * 1000, y: last_tick.y};
-                                    if(current_price_diff > 0) {
-                                        var range = Math.round(Math.random() * 1000);
-                                        if(range >= 0 && range <= 700) {
-                                            max_distance = current_median_point.y + abs_price_diff * 0.03;
-                                            min_distance = current_median_point.y + abs_price_diff * 0.01;
-                                        } else if(range > 700 && range <= 900) {
-                                            max_distance = current_median_point.y + abs_price_diff * 0.13;
-                                            min_distance = current_median_point.y + abs_price_diff * 0.08;
-                                        } else if(range > 900 && range <= 980) {
-                                            max_distance = current_median_point.y + abs_price_diff * 0.08;
-                                            min_distance = current_median_point.y + abs_price_diff * 0.05;
-                                        } else {
-                                            max_distance = current_median_point.y + abs_price_diff * 0.05;
-                                            min_distance = current_median_point.y + abs_price_diff * 0.03;
+                                if((init_tick.lasttime + i) % 60 === 0) {
+                                    var chance_of_flat = Math.round(Math.random() * 10);
+                                    if(chance_of_flat <= 4) {
+                                        if(is_flat) {
+                                            recovery_offset = 60 * flats_in_a_row;
                                         }
+                                        is_flat = false;
                                     } else {
-                                        var range = Math.round(Math.random() * 1000);
-                                        if(range >= 0 && range <= 700) {
-                                            max_distance = current_median_point.y - abs_price_diff * 0.03;
-                                            min_distance = current_median_point.y - abs_price_diff * 0.01;
-                                        } else if(range > 700 && range <= 900) {
-                                            max_distance = current_median_point.y - abs_price_diff * 0.13;
-                                            min_distance = current_median_point.y - abs_price_diff * 0.08;
-                                        } else if(range > 900 && range <= 980) {
-                                            max_distance = current_median_point.y - abs_price_diff * 0.08;
-                                            min_distance = current_median_point.y - abs_price_diff * 0.05;
-                                        } else {
-                                            max_distance = current_median_point.y - abs_price_diff * 0.05;
-                                            min_distance = current_median_point.y - abs_price_diff * 0.03;
+                                        if(!is_flat) {
+                                            flat_init_point = i;
+                                            flats_in_a_row = 0;
                                         }
+                                        is_flat = true;
+                                        flats_in_a_row++;
                                     }
-                                    new_tick.y = (Math.random() * (max_distance - min_distance) + min_distance);
-                                    all_changed_ticks.push(new_tick);
                                 }
                             }
+                            var current_median_point;
+                            var current_time_offset;
+                            if(is_flat) {
+                                current_time_offset = flat_init_point;
+                            } else {
+                                if(recovery_offset !== 0) {
+                                    recovery_offset -= 1 * flats_in_a_row;
+                                }
+                                current_time_offset = i - recovery_offset;
+                            }
+                            if(price_diff < 0) {
+                                current_median_point = {x: (init_tick.lasttime + i) * 1000, y: ((init_tick.ask + init_tick.bid) / 2) + (average_change_by_sec * current_time_offset)};
+                            } else {
+                                current_median_point = {x: (init_tick.lasttime + i) * 1000, y: ((init_tick.ask + init_tick.bid) / 2) - (average_change_by_sec * current_time_offset)};
+                            }
+                            median_spline.middle.push(current_median_point);
+
+                            var last_tick = all_changed_ticks[all_changed_ticks.length - 1];
+                            var current_price_diff = current_median_point.y - last_tick.y;
+                            var new_tick = {x: (init_tick.lasttime + i) * 1000, y: last_tick.y};
+                            if(current_price_diff > 0) {
+                                var range = Math.round(Math.random() * 1000);
+                                if(range >= 0 && range <= 700) {
+                                    max_distance = current_median_point.y + abs_price_diff * 0.003;
+                                    min_distance = current_median_point.y + abs_price_diff * 0.001;
+                                } else if(range > 700 && range <= 900) {
+                                    max_distance = current_median_point.y + abs_price_diff * 0.013;
+                                    min_distance = current_median_point.y + abs_price_diff * 0.008;
+                                } else if(range > 900 && range <= 980) {
+                                    max_distance = current_median_point.y + abs_price_diff * 0.008;
+                                    min_distance = current_median_point.y + abs_price_diff * 0.005;
+                                } else {
+                                    max_distance = current_median_point.y + abs_price_diff * 0.005;
+                                    min_distance = current_median_point.y + abs_price_diff * 0.003;
+                                }
+                            } else {
+                                var range = Math.round(Math.random() * 1000);
+                                if(range >= 0 && range <= 700) {
+                                    max_distance = current_median_point.y - abs_price_diff * 0.003;
+                                    min_distance = current_median_point.y - abs_price_diff * 0.001;
+                                } else if(range > 700 && range <= 900) {
+                                    max_distance = current_median_point.y - abs_price_diff * 0.013;
+                                    min_distance = current_median_point.y - abs_price_diff * 0.008;
+                                } else if(range > 900 && range <= 980) {
+                                    max_distance = current_median_point.y - abs_price_diff * 0.008;
+                                    min_distance = current_median_point.y - abs_price_diff * 0.005;
+                                } else {
+                                    max_distance = current_median_point.y - abs_price_diff * 0.005;
+                                    min_distance = current_median_point.y - abs_price_diff * 0.003;
+                                }
+                            }
+                            new_tick.y = (Math.random() * (max_distance - min_distance) + min_distance);
+                            all_changed_ticks.push(new_tick);
                         }
-                        var last_tick = all_changed_ticks[all_changed_ticks.length - 1];
+                        last_tick = all_changed_ticks[all_changed_ticks.length - 1];
                         var new_tick = {x: (init_tick.lasttime + time_to_change + 5) * 1000, y: price_to_change};
                         all_changed_ticks.push(new_tick);
-                        console.log(all_changed_ticks);
                         chart.series[1].setData(all_changed_ticks, true);
                         chart.series[2].setData(median_spline.middle, true);
                     }
-                    if(init_data && data_inited) {
+                    if(init_data && data_inited && !end_changes) {
                         if(tick.lasttime >= (init_tick.lasttime + time_to_change + 5)) {
-                            var current_real_price = (tick.ask + tick.bid) * 0.5;
-
+                            var last_tick = all_changed_ticks[all_changed_ticks.length - 1];
+                            var current_price_diff = last_tick.y - ((tick.ask + tick.bid) / 2);
+                            var abs_current_price_diff = Math.abs(current_price_diff);
+                            if(!init_second_part) {
+                                init_second_part = true;
+                                end_init_tick = last_tick;
+                                max_possible_diff_to_end = Math.abs(last_tick.y - ((tick.ask + tick.bid) / 2)) * 0.10 ;
+                                average_change_by_sec = abs_current_price_diff / time_to_end;
+                            }
+                            if(abs_current_price_diff <= max_possible_diff_to_end) {
+                                end_changes = true;
+                            } else {
+                                var current_median_point;
+                                if(current_price_diff > 0) {
+                                    current_median_point = {x: tick.lasttime * 1000, y: (end_init_tick.y - (average_change_by_sec * (tick.lasttime - (end_init_tick.x / 1000))))};
+                                } else {
+                                    current_median_point = {x: tick.lasttime * 1000, y: (end_init_tick.y + (average_change_by_sec * (tick.lasttime - (end_init_tick.x / 1000))))};
+                                }
+                                var new_tick = {x: (tick.lasttime + i) * 1000, y: last_tick.y};
+                                if(current_price_diff > 0) {
+                                    var range = Math.round(Math.random() * 1000);
+                                    if(range >= 0 && range <= 700) {
+                                        max_distance = current_median_point.y + abs_current_price_diff * 0.003;
+                                        min_distance = current_median_point.y + abs_current_price_diff * 0.001;
+                                    } else if(range > 700 && range <= 900) {
+                                        max_distance = current_median_point.y + abs_current_price_diff * 0.013;
+                                        min_distance = current_median_point.y + abs_current_price_diff * 0.008;
+                                    } else if(range > 900 && range <= 980) {
+                                        max_distance = current_median_point.y + abs_current_price_diff * 0.008;
+                                        min_distance = current_median_point.y + abs_current_price_diff * 0.005;
+                                    } else {
+                                        max_distance = current_median_point.y + abs_current_price_diff * 0.005;
+                                        min_distance = current_median_point.y + abs_current_price_diff * 0.003;
+                                    }
+                                } else {
+                                    var range = Math.round(Math.random() * 1000);
+                                    if(range >= 0 && range <= 700) {
+                                        max_distance = current_median_point.y - abs_current_price_diff * 0.003;
+                                        min_distance = current_median_point.y - abs_current_price_diff * 0.001;
+                                    } else if(range > 700 && range <= 900) {
+                                        max_distance = current_median_point.y - abs_current_price_diff * 0.013;
+                                        min_distance = current_median_point.y - abs_current_price_diff * 0.008;
+                                    } else if(range > 900 && range <= 980) {
+                                        max_distance = current_median_point.y - abs_current_price_diff * 0.008;
+                                        min_distance = current_median_point.y - abs_current_price_diff * 0.005;
+                                    } else {
+                                        max_distance = current_median_point.y - abs_current_price_diff * 0.005;
+                                        min_distance = current_median_point.y - abs_current_price_diff * 0.003;
+                                    }
+                                }
+                                new_tick.y = (Math.random() * (max_distance - min_distance) + min_distance);
+                                all_changed_ticks.push(new_tick);
+                                median_spline.middle.push(current_median_point);
+                                chart.series[1].setData(all_changed_ticks, true);
+                                chart.series[2].setData(median_spline.middle, true);
+                            }
                         }
                     }
                     if (prev_real_tick) {
